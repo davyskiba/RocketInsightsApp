@@ -1,10 +1,14 @@
 package com.example.shalomhalbert.rocketinsightsapp
 
+import com.example.shalomhalbert.rocketinsightsapp.model.Date
 import com.example.shalomhalbert.rocketinsightsapp.model.Service
 import com.example.shalomhalbert.rocketinsightsapp.model.fake.*
 import com.example.shalomhalbert.rocketinsightsapp.viewmodel.MainViewModel
+import io.mockk.coEvery
+import io.mockk.mockk
 import junit.framework.Assert.assertEquals
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -14,18 +18,25 @@ import org.koin.core.context.stopKoin
 import org.koin.dsl.module
 import org.koin.test.KoinTest
 import org.koin.test.inject
+import retrofit2.HttpException
+import retrofit2.Response
 import kotlin.test.assertFailsWith
 
 class ViewModelTest : KoinTest {
 
+    companion object {
+        private val DATES_LIST = listOf(Date("2017-02-12"), Date("2017-02-11"),
+                Date("2017-02-10"), Date("2017-02-09"), Date("2017-02-08"))
+    }
+
     private val viewModel: MainViewModel by inject()
-    private val service: Service by inject()
+    private val service: Service = mockk()
 
     @Before
     fun before() {
         //Replaces Service with FakeService, and changes ViewModel CoroutineContext to Unconfined
         val testModule = module {
-            single<Service>(override = true) { FakeService() }
+            single(override = true) { service }
             single(override = true) { Dispatchers.Unconfined }
         }
 
@@ -39,7 +50,7 @@ class ViewModelTest : KoinTest {
 
     @Test
     fun `Dates returns filled list`() = runBlocking {
-        updateServiceConfig(FilledList())
+        coEvery { service.dates() } returns async { DATES_LIST }
 
         //Join removes the need for using CourtineScope
         viewModel.onUpdateList().join()
@@ -51,7 +62,7 @@ class ViewModelTest : KoinTest {
 
     @Test
     fun `Date returns empty list`() = runBlocking {
-        updateServiceConfig(EmptyList())
+        coEvery { service.dates() } returns async { emptyList<Date>() }
 
         viewModel.onUpdateList().join()
 
@@ -63,7 +74,7 @@ class ViewModelTest : KoinTest {
 
     @Test
     fun `Date throws HttpException and returns an empty list`() = runBlocking {
-        updateServiceConfig(HttpError())
+        coEvery { service.dates() } throws HttpException(Response.success(""))
 
         viewModel.onUpdateList().join()
 
@@ -74,16 +85,11 @@ class ViewModelTest : KoinTest {
 
     @Test(expected = Throwable::class)
     fun `Date throws Throwable`() = runBlocking {
-        updateServiceConfig(Throw())
+        coEvery { service.dates() } throws Throwable()
 
         viewModel.onUpdateList().join()
 
         assertFailsWith<Throwable> { viewModel.dates.get() }
         Unit
-    }
-
-    private fun updateServiceConfig(newConfig: FakeServiceConfigurations) {
-        val fakeService = service as FakeService
-        fakeService.configuration = newConfig
     }
 }
